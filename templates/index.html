@@ -1,0 +1,221 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f9f9f9;
+    }
+    input[type="text"] {
+      padding: 10px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    .top-input {
+      width: 300px;
+      margin-bottom: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: left;
+    }
+    th {
+      background-color: #dbe1ff;
+      font-weight: bold;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .upload-btn {
+      background-color: #4f7dff;
+      color: white;
+    }
+    .add-column-btn {
+      background-color: white;
+      color: #4f7dff;
+      border: 1px solid #4f7dff;
+      float: right;
+      margin-bottom: 10px;
+    }
+    .generate-btn {
+      background-color: #4f7dff;
+      color: white;
+      position: fixed;
+      bottom: 30px;
+      left: 30px;
+    }
+    .delete-icon {
+      color: red;
+      font-size: 18px;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+    #fileInput {
+      display: none;
+    }
+    #loader {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid #4f7dff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      font-weight: bold;
+      color: #4f7dff;
+    }
+  </style>
+</head>
+<body>
+  <input type="text" placeholder="Type..." id="searchBox" class="top-input" />
+
+  <button class="add-column-btn" onclick="addColumn()">Add Column</button>
+  <input type="file" id="fileInput" multiple accept=".pdf,.csv,.xls,.xlsx" onchange="handleUpload(event)" />
+
+  <div id="loader">Generating insights...</div>
+
+  <table id="docTable">
+    <thead>
+      <tr id="headerRow">
+        <th>Document <button class="upload-btn" onclick="triggerUpload()">Upload</button></th>
+        <th><input type="text" placeholder="Enter KPI" oninput="updateHeader(this)" /><span class="delete-icon" onclick="removeColumn(this)">&#128465;</span></th>
+        <th><input type="text" placeholder="Enter KPI" oninput="updateHeader(this)" /><span class="delete-icon" onclick="removeColumn(this)">&#128465;</span></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+    </tbody>
+  </table>
+
+  <button class="generate-btn" onclick="submitForProcessing()">Generate</button>
+
+  <script>
+    let uploadedFiles = [];
+
+    function triggerUpload() {
+      document.getElementById('fileInput').click();
+    }
+
+    function handleUpload(event) {
+      uploadedFiles = Array.from(event.target.files);
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      uploadedFiles.forEach(file => {
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        nameCell.textContent = file.name;
+        row.appendChild(nameCell);
+
+        const headerCells = document.querySelectorAll('#headerRow th');
+        for (let i = 1; i < headerCells.length; i++) {
+          const sectionCell = document.createElement('td');
+          sectionCell.textContent = '...';
+          row.appendChild(sectionCell);
+        }
+
+        tbody.appendChild(row);
+      });
+    }
+
+    function addColumn() {
+      const headerRow = document.getElementById("headerRow");
+      const th = document.createElement("th");
+      th.innerHTML = `<input type="text" placeholder="Enter KPI" oninput="updateHeader(this)" /><span class="delete-icon" onclick="removeColumn(this)">&#128465;</span>`;
+      headerRow.appendChild(th);
+
+      const rows = document.querySelectorAll("#docTable tbody tr");
+      rows.forEach(row => {
+        const td = document.createElement("td");
+        td.textContent = "...";
+        row.appendChild(td);
+      });
+    }
+
+    function removeColumn(el) {
+      const colIndex = el.closest("th").cellIndex;
+      const table = document.getElementById("docTable");
+      for (let row of table.rows) {
+        if (row.cells[colIndex]) {
+          row.deleteCell(colIndex);
+        }
+      }
+    }
+
+    function updateHeader(input) {
+      console.log("KPI Updated:", input.value);
+    }
+
+    async function submitForProcessing() {
+      if (uploadedFiles.length === 0) {
+        alert("Please upload some documents first.");
+        return;
+      }
+
+      const loader = document.getElementById("loader");
+      loader.style.display = "block";
+
+      const kpiInputs = document.querySelectorAll('#headerRow input');
+      const kpis = Array.from(kpiInputs).map(input => input.value.trim()).filter(Boolean);
+      if (kpis.length === 0) {
+        alert("Please enter at least one KPI.");
+        loader.style.display = "none";
+        return;
+      }
+
+      const formData = new FormData();
+      uploadedFiles.forEach(file => formData.append("files", file));
+      formData.append("kpis", kpis.join(","));
+
+      const response = await fetch("http://localhost:8000/upload/", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      loader.style.display = "none";
+
+      if (result.status === "success") {
+        populateTable(result.data);
+      } else {
+        alert("Failed to process documents.");
+      }
+    }
+
+    function populateTable(data) {
+      const tbody = document.getElementById("tableBody");
+      const headerInputs = document.querySelectorAll('#headerRow input');
+      const kpis = Array.from(headerInputs).map(input => input.value.trim());
+
+      Array.from(tbody.rows).forEach(row => {
+        const fileName = row.cells[0].textContent;
+        const insightMap = data[fileName];
+        if (insightMap) {
+          kpis.forEach((kpi, idx) => {
+            const cell = row.cells[idx + 1];
+            cell.textContent = insightMap[kpi] || "No data";
+          });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
